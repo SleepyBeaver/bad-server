@@ -1,43 +1,87 @@
-import { errors } from 'celebrate'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import mongoSanitize from 'express-mongo-sanitize'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
 import express, { json, urlencoded } from 'express'
-import mongoose from 'mongoose'
 import path from 'path'
-import { DB_ADDRESS } from './config'
-import errorHandler from './middlewares/error-handler'
-import serveStatic from './middlewares/serverStatic'
+import mongoose from 'mongoose'
+import csurf from 'csurf'
+import { errors } from 'celebrate'
+import { DB_ADDRESS, PORT } from './config'
 import routes from './routes'
+import errorHandler from './middlewares/error-handler'
 
-const { PORT = 3000 } = process.env
 const app = express()
+
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
 
 app.use(cookieParser())
 
-app.use(cors())
-// app.use(cors({ origin: ORIGIN_ALLOW, credentials: true }));
-// app.use(express.static(path.join(__dirname, 'public')));
+app.use(
+  cors({
+    origin: 'http://localhost:5173',
+    credentials: true,
+  })
+)
 
-app.use(serveStatic(path.join(__dirname, 'public')))
+app.use(csurf({ cookie: true }))
 
-app.use(urlencoded({ extended: true }))
-app.use(json())
+app.get('/csrf-token', (req, res) => {
+  res.json({ csrfToken: req.csrfToken() })
+})
 
-app.options('*', cors())
+app.use(json({ limit: '10kb' }))
+app.use(urlencoded({ extended: true, limit: '10kb' }))
+
+app.use(mongoSanitize())
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+app.use('/api/', apiLimiter)
+
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: 'Слишком много попыток входа. Попробуйте позже.' },
+})
+app.use('/auth/login', loginLimiter)
+
+app.use(
+  '/public',
+  cors({ origin: 'http://localhost:5173', credentials: true }),
+  express.static(path.join(__dirname, 'public'))
+)
+
+app.get('/', (_req, res) => {
+  res.json({ message: 'API работает' })
+})
+
 app.use(routes)
 app.use(errors())
 app.use(errorHandler)
 
-// eslint-disable-next-line no-console
+app.use(
+  (err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err.code === 'EBADCSRFTOKEN') {
+      return res.status(403).json({ error: 'Неверный CSRF токен' })
+    }
+    next(err)
+  }
+)
 
 const bootstrap = async () => {
-    try {
-        await mongoose.connect(DB_ADDRESS)
-        await app.listen(PORT, () => console.log('ok'))
-    } catch (error) {
-        console.error(error)
-    }
+  try {
+    await mongoose.connect(DB_ADDRESS)
+    await app.listen(PORT, () => console.log(`Server listening on port ${PORT}`))
+  } catch (error) {
+    console.error(error)
+  }
 }
 
 bootstrap()
