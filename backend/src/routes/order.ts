@@ -11,10 +11,18 @@ import {
 import auth, { roleGuardMiddleware } from '../middlewares/auth'
 import { validateOrderBody } from '../middlewares/validations'
 import { Role } from '../models/user'
+import { sanitizeBody } from '../middlewares/sanitize'
 
 const orderRouter = Router()
 
-orderRouter.post('/', auth, validateOrderBody, createOrder)
+orderRouter.post(
+    '/',
+    auth,
+    validateOrderBody,
+    sanitizeBody(['comment']),
+    createOrder
+)
+
 orderRouter.get('/all', auth, getOrders)
 orderRouter.get('/all/me', auth, getOrdersCurrentUser)
 orderRouter.get(

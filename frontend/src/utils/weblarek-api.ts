@@ -1,5 +1,3 @@
-import { API_URL, CDN_URL } from '@constants'
-
 import {
     ICustomerPaginationResult,
     ICustomerResult,
@@ -34,6 +32,8 @@ class Api {
     private readonly baseUrl: string
     protected options: RequestInit
 
+    private csrfToken: string = ''
+
     constructor(baseUrl: string, options: RequestInit = {}) {
         this.baseUrl = baseUrl
         this.options = {
@@ -53,11 +53,38 @@ class Api {
                   )
     }
 
+    private async fetchCsrfToken(): Promise<string> {
+        if (!this.csrfToken) {
+            const res = await fetch(`${this.baseUrl}/csrf-token`, {
+                credentials: 'include',
+            })
+            const data = await res.json()
+
+            if (!data.csrfToken) {
+                throw new Error('CSRF token not found')
+            }
+
+            this.csrfToken = data.csrfToken
+        }
+        return this.csrfToken
+    }
+
     protected async request<T>(endpoint: string, options: RequestInit) {
+        const method = (options.method || 'GET').toUpperCase()
+
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+            const csrfToken = await this.fetchCsrfToken()
+            options.headers = {
+                ...options.headers,
+                'X-CSRF-Token': csrfToken,
+            }
+        }
+
         try {
             const res = await fetch(`${this.baseUrl}${endpoint}`, {
                 ...this.options,
                 ...options,
+                credentials: 'include',
             })
             return await this.handleResponse<T>(res)
         } catch (error) {
@@ -95,10 +122,9 @@ class Api {
     }
 }
 
+
 export interface IWebLarekAPI {
-    getProductList: (
-        filters: Record<string, unknown>
-    ) => Promise<IProductPaginationResult>
+    getProductList: (filters?: Record<string, unknown>) => Promise<IProductPaginationResult>
     getProductItem: (id: string) => Promise<IProduct>
     createOrder: (order: IOrder) => Promise<IOrderResult>
 }
@@ -113,7 +139,7 @@ export class WebLarekAPI extends Api implements IWebLarekAPI {
 
     getProductItem = (id: string): Promise<IProduct> => {
         return this.request<IProduct>(`/product/${id}`, { method: 'GET' }).then(
-            (data: IProduct) => ({
+            (data) => ({
                 ...data,
                 image: {
                     ...data.image,
@@ -123,27 +149,67 @@ export class WebLarekAPI extends Api implements IWebLarekAPI {
         )
     }
 
-    getProductList = (
-        filters: Record<string, unknown> = {}
-    ): Promise<IProductPaginationResult> => {
-        const queryParams = new URLSearchParams(
-            filters as Record<string, string>
-        ).toString()
-        return this.request<IProductPaginationResult>(
-            `/product?${queryParams}`,
-            {
-                method: 'GET',
-            }
-        ).then((data) => ({
+    getProductList = (filters: Record<string, unknown> = {}): Promise<IProductPaginationResult> => {
+        const queryParams = new URLSearchParams(filters as Record<string, string>).toString()
+        return this.request<IProductPaginationResult>(`/product?${queryParams}`, { method: 'GET' }).then(
+            (data) => ({
+                ...data,
+                items: data.items.map((item) => ({
+                    ...item,
+                    image: {
+                        ...item.image,
+                        fileName: this.cdn + item.image.fileName,
+                    },
+                })),
+            })
+        )
+    }
+
+    createProduct = (data: Omit<IProduct, '_id'>) => {
+        return this.requestWithRefresh<IProduct>('/product', {
+            method: 'POST',
+            body: JSON.stringify(data),
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getCookie('accessToken')}`,
+            },
+        }).then((data) => ({
             ...data,
-            items: data.items.map((item) => ({
-                ...item,
-                image: {
-                    ...item.image,
-                    fileName: this.cdn + item.image.fileName,
-                },
-            })),
+            image: { ...data.image, fileName: this.cdn + data.image.fileName },
         }))
+    }
+
+    updateProduct = (data: Partial<Omit<IProduct, '_id'>>, id: string) => {
+        return this.requestWithRefresh<IProduct>(`/product/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getCookie('accessToken')}`,
+            },
+        }).then((data) => ({
+            ...data,
+            image: { ...data.image, fileName: this.cdn + data.image.fileName },
+        }))
+    }
+
+    deleteProduct = (id: string) => {
+        return this.requestWithRefresh<IProduct>(`/product/${id}`, {
+            method: 'DELETE',
+            headers: {
+                Authorization: `Bearer ${getCookie('accessToken')}`,
+            },
+        })
+    }
+
+    uploadFile = (data: FormData) => {
+        return this.requestWithRefresh<IFile>('/upload', {
+            method: 'POST',
+            body: data,
+            headers: {
+                Authorization: `Bearer ${getCookie('accessToken')}`,
+            },
+        }).then((file) => ({ ...file, fileName: file.fileName }))
     }
 
     createOrder = (order: IOrder): Promise<IOrderResult> => {
@@ -154,13 +220,10 @@ export class WebLarekAPI extends Api implements IWebLarekAPI {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${getCookie('accessToken')}`,
             },
-        }).then((data: IOrderResult) => data)
+        })
     }
 
-    updateOrderStatus = (
-        status: StatusType,
-        orderNumber: string
-    ): Promise<IOrderResult> => {
+    updateOrderStatus = (status: StatusType, orderNumber: string) => {
         return this.requestWithRefresh<IOrderResult>(`/order/${orderNumber}`, {
             method: 'PATCH',
             body: JSON.stringify({ status }),
@@ -171,68 +234,41 @@ export class WebLarekAPI extends Api implements IWebLarekAPI {
         })
     }
 
-    getAllOrders = (
-        filters: Record<string, unknown> = {}
-    ): Promise<IOrderPaginationResult> => {
-        const queryParams = new URLSearchParams(
-            filters as Record<string, string>
-        ).toString()
-        return this.requestWithRefresh<IOrderPaginationResult>(
-            `/order/all?${queryParams}`,
-            {
-                method: 'GET',
-                headers: {
-                    Authorization: `Bearer ${getCookie('accessToken')}`,
-                },
-            }
-        )
+    getAllOrders = (filters: Record<string, unknown> = {}) => {
+        const queryParams = new URLSearchParams(filters as Record<string, string>).toString()
+        return this.requestWithRefresh<IOrderPaginationResult>(`/order/all?${queryParams}`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${getCookie('accessToken')}` },
+        })
     }
 
-    getCurrentUserOrders = (
-        filters: Record<string, unknown> = {}
-    ): Promise<IOrderPaginationResult> => {
-        const queryParams = new URLSearchParams(
-            filters as Record<string, string>
-        ).toString()
-        return this.requestWithRefresh<IOrderPaginationResult>(
-            `/order/all/me?${queryParams}`,
-            {
-                method: 'GET',
-                headers: {
-                    Authorization: `Bearer ${getCookie('accessToken')}`,
-                },
-            }
-        )
+    getCurrentUserOrders = (filters: Record<string, unknown> = {}) => {
+        const queryParams = new URLSearchParams(filters as Record<string, string>).toString()
+        return this.requestWithRefresh<IOrderPaginationResult>(`/order/all/me?${queryParams}`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${getCookie('accessToken')}` },
+        })
     }
 
-    getOrderByNumber = (orderNumber: string): Promise<IOrderResult> => {
+    getOrderByNumber = (orderNumber: string) => {
         return this.requestWithRefresh<IOrderResult>(`/order/${orderNumber}`, {
             method: 'GET',
             headers: { Authorization: `Bearer ${getCookie('accessToken')}` },
         })
     }
 
-    getOrderCurrentUserByNumber = (
-        orderNumber: string
-    ): Promise<IOrderResult> => {
-        return this.requestWithRefresh<IOrderResult>(
-            `/order/me/${orderNumber}`,
-            {
-                method: 'GET',
-                headers: {
-                    Authorization: `Bearer ${getCookie('accessToken')}`,
-                },
-            }
-        )
+    getOrderCurrentUserByNumber = (orderNumber: string) => {
+        return this.requestWithRefresh<IOrderResult>(`/order/me/${orderNumber}`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${getCookie('accessToken')}` },
+        })
     }
 
     loginUser = (data: UserLoginBodyDto) => {
         return this.request<UserResponseToken>('/auth/login', {
             method: 'POST',
             body: JSON.stringify(data),
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
         })
     }
@@ -241,9 +277,14 @@ export class WebLarekAPI extends Api implements IWebLarekAPI {
         return this.request<UserResponseToken>('/auth/register', {
             method: 'POST',
             body: JSON.stringify(data),
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+        })
+    }
+
+    logoutUser = () => {
+        return this.request<ServerResponse<unknown>>('/auth/logout', {
+            method: 'GET',
             credentials: 'include',
         })
     }
@@ -262,98 +303,23 @@ export class WebLarekAPI extends Api implements IWebLarekAPI {
         })
     }
 
-    getAllCustomers = (
-        filters: Record<string, unknown> = {}
-    ): Promise<ICustomerPaginationResult> => {
-        const queryParams = new URLSearchParams(
-            filters as Record<string, string>
-        ).toString()
-        return this.requestWithRefresh<ICustomerPaginationResult>(
-            `/customers?${queryParams}`,
-            {
-                method: 'GET',
-                headers: {
-                    Authorization: `Bearer ${getCookie('accessToken')}`,
-                },
-            }
-        )
-    }
-
-    getCustomerById = (idCustomer: string) => {
-        return this.requestWithRefresh<ICustomerResult>(
-            `/customers/${idCustomer}`,
-            {
-                method: 'GET',
-                headers: {
-                    Authorization: `Bearer ${getCookie('accessToken')}`,
-                },
-            }
-        )
-    }
-
-    logoutUser = () => {
-        return this.request<ServerResponse<unknown>>('/auth/logout', {
+    getAllCustomers = (filters: Record<string, unknown> = {}) => {
+        const queryParams = new URLSearchParams(filters as Record<string, string>).toString()
+        return this.requestWithRefresh<ICustomerPaginationResult>(`/customers?${queryParams}`, {
             method: 'GET',
-            credentials: 'include',
+            headers: { Authorization: `Bearer ${getCookie('accessToken')}` },
         })
     }
 
-    createProduct = (data: Omit<IProduct, '_id'>) => {
-        console.log(data)
-        return this.requestWithRefresh<IProduct>('/product', {
-            method: 'POST',
-            body: JSON.stringify(data),
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${getCookie('accessToken')}`,
-            },
-        }).then((data: IProduct) => ({
-            ...data,
-            image: {
-                ...data.image,
-                fileName: this.cdn + data.image.fileName,
-            },
-        }))
-    }
-
-    uploadFile = (data: FormData) => {
-        return this.requestWithRefresh<IFile>('/upload', {
-            method: 'POST',
-            body: data,
-            headers: {
-                Authorization: `Bearer ${getCookie('accessToken')}`,
-            },
-        }).then((data) => ({
-            ...data,
-            fileName: data.fileName,
-        }))
-    }
-
-    updateProduct = (data: Partial<Omit<IProduct, '_id'>>, id: string) => {
-        return this.requestWithRefresh<IProduct>(`/product/${id}`, {
-            method: 'PATCH',
-            body: JSON.stringify(data),
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${getCookie('accessToken')}`,
-            },
-        }).then((data: IProduct) => ({
-            ...data,
-            image: {
-                ...data.image,
-                fileName: this.cdn + data.image.fileName,
-            },
-        }))
-    }
-
-    deleteProduct = (id: string) => {
-        return this.requestWithRefresh<IProduct>(`/product/${id}`, {
-            method: 'DELETE',
-            headers: {
-                Authorization: `Bearer ${getCookie('accessToken')}`,
-            },
+    getCustomerById = (idCustomer: string) => {
+        return this.requestWithRefresh<ICustomerResult>(`/customers/${idCustomer}`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${getCookie('accessToken')}` },
         })
     }
 }
 
-export default new WebLarekAPI(CDN_URL, API_URL)
+export default new WebLarekAPI(
+    import.meta.env.VITE_CDN_URL || '',
+    import.meta.env.VITE_API_URL
+)

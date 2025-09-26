@@ -3,22 +3,34 @@ import fs from 'fs'
 import path from 'path'
 
 export default function serveStatic(baseDir: string) {
-    return (req: Request, res: Response, next: NextFunction) => {
-        // Определяем полный путь к запрашиваемому файлу
-        const filePath = path.join(baseDir, req.path)
+  const root = path.resolve(baseDir)
 
-        // Проверяем, существует ли файл
-        fs.access(filePath, fs.constants.F_OK, (err) => {
-            if (err) {
-                // Файл не существует отдаем дальше мидлварам
-                return next()
-            }
-            // Файл существует, отправляем его клиенту
-            return res.sendFile(filePath, (err) => {
-                if (err) {
-                    next(err)
-                }
-            })
-        })
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const requestedPath = decodeURIComponent((req.path || '').split('?')[0] || '')
+      const filePath = path.resolve(path.join(root, requestedPath))
+
+      if (!filePath.startsWith(root)) {
+        return res.status(403).send({ message: 'Forbidden' })
+      }
+
+      fs.stat(filePath, (err, stat) => {
+        if (err) return next()
+
+        if (stat.isDirectory()) {
+          const indexFile = path.join(filePath, 'index.html')
+          if (!indexFile.startsWith(root)) return res.status(403).send({ message: 'Forbidden' })
+
+          fs.stat(indexFile, (indexErr) => {
+            if (indexErr) return res.status(404).send({ message: 'Not found' })
+            return res.sendFile(indexFile, { dotfiles: 'deny' })
+          })
+        } else {
+          return res.sendFile(filePath, { dotfiles: 'deny' })
+        }
+      })
+    } catch (e) {
+      return next(e)
     }
+  }
 }
