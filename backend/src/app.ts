@@ -28,9 +28,13 @@ app.use(
 
 app.use(csurf({ cookie: true }))
 
-app.get('/csrf-token', (req, res) => {
-  res.json({ csrfToken: req.csrfToken() })
-})
+if (process.env.NODE_ENV !== 'test') {
+  app.use(csurf({ cookie: true }))
+
+  app.get('/csrf-token', (req, res) => {
+    res.json({ csrfToken: req.csrfToken() })
+  })
+}
 
 app.use(json({ limit: '10kb' }))
 app.use(urlencoded({ extended: true, limit: '10kb' }))
