@@ -1,4 +1,3 @@
-import { API_URL, CDN_URL } from '@constants'
 import {
     ICustomerPaginationResult,
     ICustomerResult,
@@ -33,7 +32,7 @@ class Api {
     private readonly baseUrl: string
     protected options: RequestInit
 
-    private csrfToken: string | null = null
+    private csrfToken: string = ''
 
     constructor(baseUrl: string, options: RequestInit = {}) {
         this.baseUrl = baseUrl
