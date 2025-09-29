@@ -46,7 +46,7 @@ app.use(mongoSanitize())
 
 const appLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
 })

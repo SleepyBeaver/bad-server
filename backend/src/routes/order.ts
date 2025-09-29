@@ -17,8 +17,8 @@ const orderRouter = Router()
 
 orderRouter.post(
     '/',
-    validateOrderBody,
     auth,
+    validateOrderBody,
     sanitizeBody(['comment']),
     createOrder
 )
@@ -34,8 +34,8 @@ orderRouter.get(
 orderRouter.get('/me/:orderNumber', auth, getOrderCurrentUserByNumber)
 orderRouter.patch(
     '/:orderNumber',
-    validateOrderBody,
     auth,
+    validateOrderBody,
     roleGuardMiddleware(Role.Admin),
     updateOrder
 )
