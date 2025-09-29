@@ -33,7 +33,8 @@ app.use(mongoSanitize())
 const csrfProtection = csurf({ cookie: true })
 
 app.use((req, res, next) => {
-  if (req.path === '/auth/login' || req.path === '/auth/register') {
+  const exemptPaths = ['/auth/login', '/auth/register', '/csrf-token']
+  if (exemptPaths.includes(req.path)) {
     return next()
   }
   return csrfProtection(req, res, next)
