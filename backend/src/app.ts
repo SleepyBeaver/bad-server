@@ -26,6 +26,10 @@ app.use(
   })
 )
 
+app.use(json({ limit: '10kb' }))
+app.use(urlencoded({ extended: true, limit: '10kb' }))
+app.use(mongoSanitize())
+
 const csrfProtection = csurf({ cookie: true })
 
 app.use((req, res, next) => {
@@ -38,11 +42,6 @@ app.use((req, res, next) => {
 app.get('/csrf-token', (req, res) => {
   res.json({ csrfToken: req.csrfToken() })
 })
-
-app.use(json({ limit: '10kb' }))
-app.use(urlencoded({ extended: true, limit: '10kb' }))
-
-app.use(mongoSanitize())
 
 const appLimiter = rateLimit({
   windowMs: 60 * 1000,
