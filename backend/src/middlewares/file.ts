@@ -2,6 +2,7 @@ import type { Request } from 'express'
 import multer, { FileFilterCallback } from 'multer'
 import { resolve } from 'path'
 import fs from 'fs'
+import crypto from 'crypto'
 import sanitizeFilename from 'sanitize-filename'
 
 type DestinationCallback = (error: Error | null, destination: string) => void
@@ -16,11 +17,10 @@ const storage = multer.diskStorage({
   destination: (_req: Request, _file: Express.Multer.File, cb: DestinationCallback) => {
     cb(null, BASE_UPLOAD_DIR)
   },
-  filename: async (_req: Request, file: Express.Multer.File, cb: FileNameCallback) => {
-    const { v4: uuidv4 } = await import('uuid')
+  filename: (_req: Request, file: Express.Multer.File, cb: FileNameCallback) => {
     const safeBase = sanitizeFilename(file.originalname) || 'file'
     const ext = safeBase.includes('.') ? `.${safeBase.split('.').pop()}` : ''
-    const name = `${uuidv4()}${ext}`
+    const name = `${crypto.randomUUID()}${ext}`
     cb(null, name)
   },
 })
