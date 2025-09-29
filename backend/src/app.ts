@@ -26,15 +26,18 @@ app.use(
   })
 )
 
-app.use(csurf({ cookie: true }))
+const csrfProtection = csurf({ cookie: true })
 
-if (process.env.NODE_ENV !== 'test') {
-  app.use(csurf({ cookie: true }))
+app.use((req, res, next) => {
+  if (req.path === '/auth/login' || req.path === '/auth/register') {
+    return next()
+  }
+  return csrfProtection(req, res, next)
+})
 
-  app.get('/csrf-token', (req, res) => {
-    res.json({ csrfToken: req.csrfToken() })
-  })
-}
+app.get('/csrf-token', (req, res) => {
+  res.json({ csrfToken: req.csrfToken() })
+})
 
 app.use(json({ limit: '10kb' }))
 app.use(urlencoded({ extended: true, limit: '10kb' }))
