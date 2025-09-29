@@ -26,18 +26,15 @@ app.use(
   })
 )
 
-app.use(json({ limit: '10kb' }))
-app.use(urlencoded({ extended: true, limit: '10kb' }))
+app.use(json({ limit: '1mb' }))
+app.use(urlencoded({ extended: true }))
 app.use(mongoSanitize())
 
-const csrfProtection = csurf({ cookie: true })
-
+const csrfProtection = csurf({ cookie: { httpOnly: true, sameSite: 'lax' } })
 app.use((req, res, next) => {
-  const exemptPaths = ['/auth/login', '/auth/register', '/csrf-token']
-  if (exemptPaths.includes(req.path)) {
-    return next()
-  }
-  return csrfProtection(req, res, next)
+    const exemptPaths = ['/auth/login', '/auth/register', '/csrf-token']
+    if (exemptPaths.includes(req.path)) return next()
+    return csrfProtection(req, res, next)
 })
 
 app.get('/csrf-token', (req, res) => {
