@@ -44,13 +44,13 @@ app.use(urlencoded({ extended: true, limit: '10kb' }))
 
 app.use(mongoSanitize())
 
-const apiLimiter = rateLimit({
+const appLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
 })
-app.use('/api/', apiLimiter)
+app.use(appLimiter)
 
 const loginLimiter = rateLimit({
   windowMs: 60 * 1000,

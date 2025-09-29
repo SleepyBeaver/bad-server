@@ -23,7 +23,7 @@ orderRouter.post(
     createOrder
 )
 
-orderRouter.get('/all', auth, getOrders)
+orderRouter.get('/all', auth, roleGuardMiddleware(Role.Admin), getOrders)
 orderRouter.get('/all/me', auth, getOrdersCurrentUser)
 orderRouter.get(
     '/:orderNumber',
@@ -34,6 +34,7 @@ orderRouter.get(
 orderRouter.get('/me/:orderNumber', auth, getOrderCurrentUserByNumber)
 orderRouter.patch(
     '/:orderNumber',
+    validateOrderBody,
     auth,
     roleGuardMiddleware(Role.Admin),
     updateOrder
