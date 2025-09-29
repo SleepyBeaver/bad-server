@@ -7,30 +7,23 @@ import ConflictError from '../errors/conflict-error'
 import NotFoundError from '../errors/not-found-error'
 import Product from '../models/product'
 import movingFile from '../utils/movingFile'
+import { normalizeLimit } from '../utils/normalize-limit'
 
 // GET /product
 const getProducts = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const { page = 1, limit = 5 } = req.query
-        const options = {
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
-        }
-        const products = await Product.find({}, null, options)
-        const totalProducts = await Product.countDocuments({})
-        const totalPages = Math.ceil(totalProducts / Number(limit))
-        return res.send({
-            items: products,
-            pagination: {
-                totalProducts,
-                totalPages,
-                currentPage: Number(page),
-                pageSize: Number(limit),
-            },
-        })
-    } catch (err) {
-        return next(err)
-    }
+  try {
+    const page = Number(req.query.page) || 1
+    const limit = normalizeLimit(req.query.limit, 5, 10)
+
+    const options = { skip: (page - 1) * limit, limit }
+    const products = await Product.find({}, null, options)
+    const totalProducts = await Product.countDocuments({})
+    const totalPages = Math.ceil(totalProducts / limit)
+
+    res.send({ items: products, pagination: { totalProducts, totalPages, currentPage: page, pageSize: limit } })
+  } catch (err) {
+    next(err)
+  }
 }
 
 // POST /product

@@ -17,8 +17,8 @@ const orderRouter = Router()
 
 orderRouter.post(
     '/',
-    auth,
     validateOrderBody,
+    auth,
     sanitizeBody(['comment']),
     createOrder
 )

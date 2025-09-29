@@ -5,59 +5,26 @@ import NotFoundError from '../errors/not-found-error'
 import Order, { IOrder } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import User from '../models/user'
+import { normalizeLimit } from '../utils/normalize-limit'
 
 // GET /orders
 export const getOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const {
-      page = 1,
-      limit = 10,
-      sortField = 'createdAt',
-      sortOrder = 'desc',
-      status,
-      totalAmountFrom,
-      totalAmountTo,
-      orderDateFrom,
-      orderDateTo,
-      search,
-    } = req.query
+    const page = Number(req.query.page) || 1
+    const limit = normalizeLimit(req.query.limit, 10, 10)
+    const { sortField = 'createdAt', sortOrder = 'desc', status, totalAmountFrom, totalAmountTo, orderDateFrom, orderDateTo, search } = req.query
 
     const filters: any = {}
-
-    if (status) {
-      filters.status = typeof status === 'string' ? status : status
-    }
-    if (totalAmountFrom) {
-      filters.totalAmount = { ...filters.totalAmount, $gte: Number(totalAmountFrom) }
-    }
-    if (totalAmountTo) {
-      filters.totalAmount = { ...filters.totalAmount, $lte: Number(totalAmountTo) }
-    }
-    if (orderDateFrom) {
-      filters.createdAt = { ...filters.createdAt, $gte: new Date(orderDateFrom as string) }
-    }
-    if (orderDateTo) {
-      filters.createdAt = { ...filters.createdAt, $lte: new Date(orderDateTo as string) }
-    }
+    if (status) filters.status = status
+    if (totalAmountFrom) filters.totalAmount = { ...filters.totalAmount, $gte: Number(totalAmountFrom) }
+    if (totalAmountTo) filters.totalAmount = { ...filters.totalAmount, $lte: Number(totalAmountTo) }
+    if (orderDateFrom) filters.createdAt = { ...filters.createdAt, $gte: new Date(orderDateFrom as string) }
+    if (orderDateTo) filters.createdAt = { ...filters.createdAt, $lte: new Date(orderDateTo as string) }
 
     const aggregatePipeline: any[] = [
       { $match: filters },
-      {
-        $lookup: {
-          from: 'products',
-          localField: 'products',
-          foreignField: '_id',
-          as: 'products',
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'customer',
-          foreignField: '_id',
-          as: 'customer',
-        },
-      },
+      { $lookup: { from: 'products', localField: 'products', foreignField: '_id', as: 'products' } },
+      { $lookup: { from: 'users', localField: 'customer', foreignField: '_id', as: 'customer' } },
       { $unwind: '$customer' },
       { $unwind: '$products' },
     ]
@@ -76,34 +43,16 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
 
     aggregatePipeline.push(
       { $sort: sort },
-      { $skip: (Number(page) - 1) * Number(limit) },
-      { $limit: Number(limit) },
-      {
-        $group: {
-          _id: '$_id',
-          orderNumber: { $first: '$orderNumber' },
-          status: { $first: '$status' },
-          totalAmount: { $first: '$totalAmount' },
-          products: { $push: '$products' },
-          customer: { $first: '$customer' },
-          createdAt: { $first: '$createdAt' },
-        },
-      }
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+      { $group: { _id: '$_id', orderNumber: { $first: '$orderNumber' }, status: { $first: '$status' }, totalAmount: { $first: '$totalAmount' }, products: { $push: '$products' }, customer: { $first: '$customer' }, createdAt: { $first: '$createdAt' } } }
     )
 
     const orders = await Order.aggregate(aggregatePipeline)
     const totalOrders = await Order.countDocuments(filters)
-    const totalPages = Math.ceil(totalOrders / Number(limit))
+    const totalPages = Math.ceil(totalOrders / limit)
 
-    res.status(200).json({
-      orders,
-      pagination: {
-        totalOrders,
-        totalPages,
-        currentPage: Number(page),
-        pageSize: Number(limit),
-      },
-    })
+    res.status(200).json({ orders, pagination: { totalOrders, totalPages, currentPage: page, pageSize: limit } })
   } catch (error) {
     next(error)
   }
@@ -113,24 +62,21 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
 export const getOrdersCurrentUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = res.locals.user._id as Types.ObjectId
-    const { search, page = 1, limit = 5 } = req.query
-    const options = { skip: (Number(page) - 1) * Number(limit), limit: Number(limit) }
+    const page = Number(req.query.page) || 1
+    const limit = normalizeLimit(req.query.limit, 5, 10)
+    const { search } = req.query
 
+    const options = { skip: (page - 1) * limit, limit }
     const user = await User.findById(userId)
-      .populate({
-        path: 'orders',
-        populate: [{ path: 'products' }, { path: 'customer' }],
-      })
+      .populate({ path: 'orders', populate: [{ path: 'products' }, { path: 'customer' }] })
       .orFail(() => new NotFoundError('Пользователь по заданному id отсутствует в базе'))
 
     let orders = user.orders as unknown as IOrder[]
-
     if (search) {
       const searchRegex = new RegExp(search as string, 'i')
       const searchNumber = Number(search)
       const products = await Product.find({ title: searchRegex })
       const productIds = products.map((p) => p._id)
-
       orders = orders.filter((order) => {
         const matchesProductTitle = order.products.some((p) => {
           const productId = p instanceof Types.ObjectId ? p : p._id
@@ -142,13 +88,10 @@ export const getOrdersCurrentUser = async (req: Request, res: Response, next: Ne
     }
 
     const totalOrders = orders.length
-    const totalPages = Math.ceil(totalOrders / Number(limit))
+    const totalPages = Math.ceil(totalOrders / limit)
     orders = orders.slice(options.skip, options.skip + options.limit)
 
-    res.status(200).json({
-      orders,
-      pagination: { totalOrders, totalPages, currentPage: Number(page), pageSize: Number(limit) },
-    })
+    res.status(200).json({ orders, pagination: { totalOrders, totalPages, currentPage: page, pageSize: limit } })
   } catch (error) {
     next(error)
   }
