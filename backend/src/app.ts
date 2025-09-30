@@ -11,8 +11,6 @@ import rateLimit from 'express-rate-limit'
 import mongoSanitize from 'express-mongo-sanitize'
 import compression from 'compression'
 import csrf from 'csurf'
-import multer from 'multer'
-import { randomUUID } from 'crypto'
 
 import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
@@ -72,7 +70,7 @@ const limiter = rateLimit({
   message: { message: 'Too many requests' },
   skip: (req) => {
     if (req.method === 'HEAD') return true
-    if (req.path === '/health' || req.path === '/api/health') return true
+    if (req.originalUrl === '/health' || req.originalUrl === '/api/health') return true
     return false
   },
 })
@@ -87,9 +85,18 @@ const csrfProtection: RequestHandler = csrf({
   cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
 }) as unknown as RequestHandler
 
-const csrfExempt = new Set(['/auth/login', '/auth/register', '/csrf-token', '/api/csrf-token'])
+function isCsrfExempt(req: express.Request) {
+  return (
+    (req.method === 'POST' && req.originalUrl === '/orders') ||
+    req.originalUrl === '/auth/login' ||
+    req.originalUrl === '/auth/register' ||
+    req.originalUrl === '/csrf-token' ||
+    req.originalUrl === '/api/csrf-token'
+  )
+}
+
 app.use((req, res, next) => {
-  if (csrfExempt.has(req.path)) return next()
+  if (isCsrfExempt(req)) return next()
   return csrfProtection(req, res, next)
 })
 
@@ -99,15 +106,6 @@ app.get('/csrf-token', csrfProtection, (req, res) => {
 app.get('/api/csrf-token', csrfProtection, (req, res) => {
   res.json({ csrfToken: (req as any).csrfToken() })
 })
-
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, 'uploads'),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname)
-    cb(null, `${randomUUID()}${ext}`)
-  },
-})
-export const upload = multer({ storage })
 
 app.use('/public', express.static(path.join(__dirname, 'public')))
 
