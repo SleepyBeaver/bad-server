@@ -1,117 +1,91 @@
-import { errors as celebrateErrors } from 'celebrate'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import mongoSanitize from 'express-mongo-sanitize'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
-import express, { json, urlencoded, type RequestHandler } from 'express'
-import mongoose from 'mongoose'
+import express, { json, urlencoded } from 'express'
 import path from 'path'
-import helmet from 'helmet'
-import hpp from 'hpp'
-import rateLimit from 'express-rate-limit'
-import mongoSanitize from 'express-mongo-sanitize'
-import compression from 'compression'
-import csrf from 'csurf'
-import { Request, Response, NextFunction } from 'express'
-
-import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
-import errorHandler from './middlewares/error-handler'
+import mongoose from 'mongoose'
+import csurf from 'csurf'
+import { errors } from 'celebrate'
+import { DB_ADDRESS, PORT } from './config'
 import routes from './routes'
+import errorHandler from './middlewares/error-handler'
 
 const app = express()
-const isProd = NODE_ENV === 'production'
-const isTest = NODE_ENV === 'test' || NODE_ENV === 'development'
-const DEFAULT_ORIGIN = 'http://localhost:5173'
 
-const allow = new Set(
-  (CORS_ORIGINS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-)
-allow.add(DEFAULT_ORIGIN)
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
+
+app.use(cookieParser())
 
 app.use(
   cors({
-    origin: (origin, cb) => {
-      if (!origin || allow.has(origin)) return cb(null, true)
-      return cb(new Error('CORS'))
-    },
+    origin: 'http://localhost:5173',
     credentials: true,
   })
 )
 
+app.use(json({ limit: '1mb' }))
+app.use(urlencoded({ extended: true }))
+app.use(mongoSanitize())
+
+const csrfProtection = csurf({ cookie: { httpOnly: true, sameSite: 'lax' } })
 app.use((req, res, next) => {
-  const o = (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
-  if (allow.has(o) && !res.getHeader('Access-Control-Allow-Origin')) {
-    res.setHeader('Access-Control-Allow-Origin', o)
-  }
-  res.setHeader('Vary', 'Origin')
-  next()
+    const exemptPaths = ['/auth/login', '/auth/register', '/csrf-token']
+    if (exemptPaths.includes(req.path)) return next()
+    return csrfProtection(req, res, next)
 })
 
-app.disable('x-powered-by')
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    contentSecurityPolicy: false,
-  })
-)
-app.use(hpp())
-app.use(compression())
-app.set('trust proxy', 1)
+app.get('/csrf-token', (req, res) => {
+  res.json({ csrfToken: req.csrfToken() })
+})
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }))
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
-
-const limiter = rateLimit({
+const appLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: isTest ? 1000 : 50,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: 'Too many requests' },
-  skip: (req) => req.method === 'HEAD' || ['/health', '/api/health'].includes(req.path),
 })
-app.use(limiter)
+app.use(appLimiter)
 
-app.use(mongoSanitize())
-app.use(cookieParser())
-app.use(urlencoded({ extended: false }))
-app.use(json({ limit: '1mb' }))
-
-const csrfProtection: RequestHandler = isTest
-  ? ((_req: Request, _res: Response, next: NextFunction) => next())
-  : csrf({
-      cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
-    }) as unknown as RequestHandler
-
-app.get('/csrf-token', csrfProtection, (req, res) => {
-  res.json({ csrfToken: (req as any).csrfToken?.() || 'test-token' })
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: 'Слишком много попыток входа. Попробуйте позже.' },
 })
-app.get('/api/csrf-token', csrfProtection, (req, res) => {
-  res.json({ csrfToken: (req as any).csrfToken?.() || 'test-token' })
+app.use('/auth/login', loginLimiter)
+
+app.use(
+  '/public',
+  cors({ origin: 'http://localhost:5173', credentials: true }),
+  express.static(path.join(__dirname, 'public'))
+)
+
+app.get('/', (_req, res) => {
+  res.json({ message: 'API работает' })
 })
 
-app.use('/public', express.static(path.join(__dirname, 'public')))
 app.use(routes)
-
-app.use(celebrateErrors())
+app.use(errors())
 app.use(errorHandler)
-app.use((_req, res) => {
-  if (res.headersSent) return
-  res.status(404).json({ message: 'Not found' })
-})
+
+app.use(
+  (err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err.code === 'EBADCSRFTOKEN') {
+      return res.status(403).json({ error: 'Неверный CSRF токен' })
+    }
+    next(err)
+  }
+)
 
 const bootstrap = async () => {
   try {
     await mongoose.connect(DB_ADDRESS)
-    await app.listen(Number(PORT) || 3000, () =>
-      console.log(`Server listening on port ${PORT}`)
-    )
+    await app.listen(PORT, () => console.log(`Server listening on port ${PORT}`))
   } catch (error) {
     console.error(error)
   }
 }
 
 bootstrap()
-
-export default app
