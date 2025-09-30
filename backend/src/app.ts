@@ -11,14 +11,14 @@ import rateLimit from 'express-rate-limit'
 import mongoSanitize from 'express-mongo-sanitize'
 import compression from 'compression'
 import csrf from 'csurf'
+import multer from 'multer'
+import { randomUUID } from 'crypto'
 
 import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
-
 import routes from './routes'
 
 const app = express()
-
 const isProd = NODE_ENV === 'production'
 const DEFAULT_ORIGIN = 'http://localhost:5173'
 
@@ -66,7 +66,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Too many requests' },
@@ -87,18 +87,27 @@ const csrfProtection: RequestHandler = csrf({
   cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
 }) as unknown as RequestHandler
 
+const csrfExempt = new Set(['/auth/login', '/auth/register', '/csrf-token', '/api/csrf-token'])
 app.use((req, res, next) => {
-  const exemptPaths = ['/auth/login', '/auth/register', '/csrf-token', '/api/csrf-token']
-  if (exemptPaths.includes(req.path)) return next()
+  if (csrfExempt.has(req.path)) return next()
   return csrfProtection(req, res, next)
 })
 
-app.get('/csrf-token', (req, res) => {
+app.get('/csrf-token', csrfProtection, (req, res) => {
   res.json({ csrfToken: (req as any).csrfToken() })
 })
-app.get('/api/csrf-token', (req, res) => {
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
   res.json({ csrfToken: (req as any).csrfToken() })
 })
+
+const storage = multer.diskStorage({
+  destination: path.join(__dirname, 'uploads'),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname)
+    cb(null, `${randomUUID()}${ext}`)
+  },
+})
+export const upload = multer({ storage })
 
 app.use('/public', express.static(path.join(__dirname, 'public')))
 
@@ -106,14 +115,6 @@ app.use(routes)
 
 app.use(celebrateErrors())
 app.use(errorHandler)
-
-app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (err.code === 'EBADCSRFTOKEN') {
-    return res.status(403).json({ error: 'Неверный CSRF токен' })
-  }
-  next(err)
-})
-
 app.use((_req, res) => {
   if (res.headersSent) return
   res.status(404).json({ message: 'Not found' })
@@ -129,7 +130,6 @@ const bootstrap = async () => {
     console.error(error)
   }
 }
-
 bootstrap()
 
 export default app
