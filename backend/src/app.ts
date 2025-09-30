@@ -14,6 +14,7 @@ import csrf from 'csurf'
 
 import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
+
 import routes from './routes'
 
 const app = express()
@@ -63,9 +64,9 @@ app.set('trust proxy', 1)
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
-const appLimiter = rateLimit({
+const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 50,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Too many requests' },
@@ -75,15 +76,7 @@ const appLimiter = rateLimit({
     return false
   },
 })
-
-const loginLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  message: { error: 'Слишком много попыток входа. Попробуйте позже.' },
-})
-
-app.use(appLimiter)
-app.use('/auth/login', loginLimiter)
+app.use(limiter)
 
 app.use(mongoSanitize())
 app.use(cookieParser())
@@ -113,6 +106,14 @@ app.use(routes)
 
 app.use(celebrateErrors())
 app.use(errorHandler)
+
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err.code === 'EBADCSRFTOKEN') {
+    return res.status(403).json({ error: 'Неверный CSRF токен' })
+  }
+  next(err)
+})
+
 app.use((_req, res) => {
   if (res.headersSent) return
   res.status(404).json({ message: 'Not found' })
