@@ -30,23 +30,10 @@ if (!allow.has(DEFAULT_ORIGIN)) allow.add(DEFAULT_ORIGIN)
 
 app.use(
   cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true)
-      if (allow.has(origin)) return cb(null, true)
-      return cb(new Error('CORS'))
-    },
+    origin: [...allow],
     credentials: true,
   })
 )
-
-app.use((req, res, next) => {
-  const o = (req.headers.origin as string | undefined) || DEFAULT_ORIGIN
-  if (allow.has(o) && !res.getHeader('Access-Control-Allow-Origin')) {
-    res.setHeader('Access-Control-Allow-Origin', o)
-  }
-  res.setHeader('Vary', 'Origin')
-  next()
-})
 
 app.disable('x-powered-by')
 app.use(
@@ -59,6 +46,11 @@ app.use(hpp())
 app.use(compression())
 app.set('trust proxy', 1)
 
+app.use(mongoSanitize())
+app.use(cookieParser())
+app.use(urlencoded({ extended: false }))
+app.use(json({ limit: '1mb' }))
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
@@ -70,25 +62,26 @@ const limiter = rateLimit({
   message: { message: 'Too many requests' },
   skip: (req) => {
     if (req.method === 'HEAD') return true
-    if (req.originalUrl === '/health' || req.originalUrl === '/api/health') return true
+    if (req.originalUrl.startsWith('/health')) return true
+    if (req.originalUrl.startsWith('/api/')) return true
     return false
   },
 })
 app.use(limiter)
-
-app.use(mongoSanitize())
-app.use(cookieParser())
-app.use(urlencoded({ extended: false }))
-app.use(json({ limit: '1mb' }))
 
 const csrfProtection: RequestHandler = csrf({
   cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
 }) as unknown as RequestHandler
 
 function isCsrfExempt(req: express.Request) {
-  return (
-    ['/order', '/orders', '/auth/login', '/auth/register', '/csrf-token', '/api/csrf-token'].includes(req.originalUrl)
-  )
+  return [
+    '/order',
+    '/orders',
+    '/auth/login',
+    '/auth/register',
+    '/csrf-token',
+    '/api/csrf-token',
+  ].includes(req.originalUrl)
 }
 
 app.use((req, res, next) => {
