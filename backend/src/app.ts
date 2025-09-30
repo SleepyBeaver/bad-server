@@ -8,14 +8,12 @@ import path from 'path'
 import helmet from 'helmet'
 import hpp from 'hpp'
 import rateLimit from 'express-rate-limit'
-import slowDown from 'express-slow-down'
 import mongoSanitize from 'express-mongo-sanitize'
 import compression from 'compression'
 import csrf from 'csurf'
 
 import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
-import serveStatic from './middlewares/serverStatic'
 
 import routes from './routes'
 
@@ -80,14 +78,6 @@ const limiter = rateLimit({
 })
 app.use(limiter)
 
-app.use(
-  slowDown({
-    windowMs: 60 * 1000,
-    delayAfter: 120,
-    delayMs: () => 250,
-  })
-)
-
 app.use(mongoSanitize())
 app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
@@ -104,11 +94,7 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
   res.json({ csrfToken: (req as any).csrfToken() })
 })
 
-app.use(
-  '/public',
-  cors({ origin: 'http://localhost:5173', credentials: true }),
-  serveStatic(path.join(__dirname, 'public'))
-)
+app.use('/public', express.static(path.join(__dirname, 'public')))
 
 app.use(routes)
 
@@ -122,7 +108,9 @@ app.use((_req, res) => {
 const bootstrap = async () => {
   try {
     await mongoose.connect(DB_ADDRESS)
-    await app.listen(Number(PORT) || 3000, () => console.log(`Server listening on port ${PORT}`))
+    await app.listen(Number(PORT) || 3000, () =>
+      console.log(`Server listening on port ${PORT}`)
+    )
   } catch (error) {
     console.error(error)
   }
