@@ -22,3 +22,7 @@ export const REFRESH_TOKEN = {
         } as CookieOptions,
     },
 }
+
+export const { NODE_ENV = 'development' } = process.env
+
+export const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173')
