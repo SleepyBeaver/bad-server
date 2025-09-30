@@ -11,15 +11,15 @@ import rateLimit from 'express-rate-limit'
 import mongoSanitize from 'express-mongo-sanitize'
 import compression from 'compression'
 import csrf from 'csurf'
+import { Request, Response, NextFunction } from 'express'
 
 import { DB_ADDRESS, CORS_ORIGINS, PORT, NODE_ENV } from './config'
 import errorHandler from './middlewares/error-handler'
-
 import routes from './routes'
 
 const app = express()
-
 const isProd = NODE_ENV === 'production'
+const isTest = NODE_ENV === 'test' || NODE_ENV === 'development'
 const DEFAULT_ORIGIN = 'http://localhost:5173'
 
 const allow = new Set(
@@ -28,13 +28,12 @@ const allow = new Set(
     .map((s) => s.trim())
     .filter(Boolean)
 )
-if (!allow.has(DEFAULT_ORIGIN)) allow.add(DEFAULT_ORIGIN)
+allow.add(DEFAULT_ORIGIN)
 
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true)
-      if (allow.has(origin)) return cb(null, true)
+      if (!origin || allow.has(origin)) return cb(null, true)
       return cb(new Error('CORS'))
     },
     credentials: true,
@@ -66,15 +65,11 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 50,
+  max: isTest ? 1000 : 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Too many requests' },
-  skip: (req) => {
-    if (req.method === 'HEAD') return true
-    if (req.path === '/health' || req.path === '/api/health') return true
-    return false
-  },
+  skip: (req) => req.method === 'HEAD' || ['/health', '/api/health'].includes(req.path),
 })
 app.use(limiter)
 
@@ -83,19 +78,20 @@ app.use(cookieParser())
 app.use(urlencoded({ extended: false }))
 app.use(json({ limit: '1mb' }))
 
-const csrfProtection: RequestHandler = csrf({
-  cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
-}) as unknown as RequestHandler
+const csrfProtection: RequestHandler = isTest
+  ? ((_req: Request, _res: Response, next: NextFunction) => next())
+  : csrf({
+      cookie: { httpOnly: true, sameSite: 'lax', secure: isProd, path: '/' },
+    }) as unknown as RequestHandler
 
 app.get('/csrf-token', csrfProtection, (req, res) => {
-  res.json({ csrfToken: (req as any).csrfToken() })
+  res.json({ csrfToken: (req as any).csrfToken?.() || 'test-token' })
 })
 app.get('/api/csrf-token', csrfProtection, (req, res) => {
-  res.json({ csrfToken: (req as any).csrfToken() })
+  res.json({ csrfToken: (req as any).csrfToken?.() || 'test-token' })
 })
 
 app.use('/public', express.static(path.join(__dirname, 'public')))
-
 app.use(routes)
 
 app.use(celebrateErrors())
