@@ -87,11 +87,7 @@ const csrfProtection: RequestHandler = csrf({
 
 function isCsrfExempt(req: express.Request) {
   return (
-    req.originalUrl === '/order' ||
-    req.originalUrl === '/auth/login' ||
-    req.originalUrl === '/auth/register' ||
-    req.originalUrl === '/csrf-token' ||
-    req.originalUrl === '/api/csrf-token'
+    ['/order', '/orders', '/auth/login', '/auth/register', '/csrf-token', '/api/csrf-token'].includes(req.originalUrl)
   )
 }
 
