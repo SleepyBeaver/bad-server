@@ -28,7 +28,7 @@ app.use(cors({
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 10,
   message: 'Слишком много запросов, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
