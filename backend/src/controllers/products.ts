@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express'
 import { constants } from 'http2'
-import { Error as MongooseError } from 'mongoose'
+import { Error as MongooseError, isValidObjectId } from 'mongoose'
 import { join } from 'path'
 import BadRequestError from '../errors/bad-request-error'
 import ConflictError from '../errors/conflict-error'
@@ -34,15 +34,13 @@ const getProducts = async (req: Request, res: Response, next: NextFunction) => {
 }
 
 // POST /product
-const createProduct = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-) => {
+const createProduct = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { description, category, price, title, image } = req.body
 
-        // Переносим картинку из временной папки
+        if (typeof title !== 'string' || title.length < 2 || title.length > 30)
+            return next(new BadRequestError('Поле "title" должно быть строкой от 2 до 30 символов'))
+
         if (image) {
             movingFile(
                 image.fileName,
@@ -51,92 +49,59 @@ const createProduct = async (
             )
         }
 
-        const product = await Product.create({
-            description,
-            image,
-            category,
-            price,
-            title,
-        })
+        const product = await Product.create({ description, image, category, price, title })
         return res.status(constants.HTTP_STATUS_CREATED).send(product)
     } catch (error) {
-        if (error instanceof MongooseError.ValidationError) {
-            return next(new BadRequestError(error.message))
-        }
-        if (error instanceof Error && error.message.includes('E11000')) {
-            return next(
-                new ConflictError('Товар с таким заголовком уже существует')
-            )
-        }
+        if (error instanceof MongooseError.ValidationError) return next(new BadRequestError(error.message))
+        if (error instanceof Error && error.message.includes('E11000'))
+            return next(new ConflictError('Товар с таким заголовком уже существует'))
         return next(error)
     }
 }
 
-// TODO: Добавить guard admin
 // PUT /product
-const updateProduct = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-) => {
+const updateProduct = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { productId } = req.params
-        const { image } = req.body
+        if (!isValidObjectId(productId)) return next(new BadRequestError('Передан не валидный ID товара'))
 
-        // Переносим картинку из временной папки
-        if (image) {
+        const allowedFields = ['title', 'description', 'category', 'price', 'image']
+        const updateData: any = {}
+        allowedFields.forEach((field) => {
+            if (req.body[field] !== undefined) updateData[field] = req.body[field]
+        })
+
+        if (updateData.image) {
             movingFile(
-                image.fileName,
+                updateData.image.fileName,
                 join(__dirname, `../public/${process.env.UPLOAD_PATH_TEMP}`),
                 join(__dirname, `../public/${process.env.UPLOAD_PATH}`)
             )
         }
 
-        const product = await Product.findByIdAndUpdate(
-            productId,
-            {
-                $set: {
-                    ...req.body,
-                    price: req.body.price ? req.body.price : null,
-                    image: req.body.image ? req.body.image : undefined,
-                },
-            },
-            { runValidators: true, new: true }
-        ).orFail(() => new NotFoundError('Нет товара по заданному id'))
+        const product = await Product.findByIdAndUpdate(productId, updateData, { new: true, runValidators: true })
+            .orFail(() => new NotFoundError('Нет товара по заданному id'))
+
         return res.send(product)
     } catch (error) {
-        if (error instanceof MongooseError.ValidationError) {
-            return next(new BadRequestError(error.message))
-        }
-        if (error instanceof MongooseError.CastError) {
-            return next(new BadRequestError('Передан не валидный ID товара'))
-        }
-        if (error instanceof Error && error.message.includes('E11000')) {
-            return next(
-                new ConflictError('Товар с таким заголовком уже существует')
-            )
-        }
+        if (error instanceof MongooseError.ValidationError) return next(new BadRequestError(error.message))
+        if (error instanceof Error && error.message.includes('E11000'))
+            return next(new ConflictError('Товар с таким заголовком уже существует'))
         return next(error)
     }
 }
 
-// TODO: Добавить guard admin
 // DELETE /product
-const deleteProduct = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-) => {
+const deleteProduct = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { productId } = req.params
+        if (!isValidObjectId(productId)) return next(new BadRequestError('Передан не валидный ID товара'))
+
         const product = await Product.findByIdAndDelete(productId).orFail(
             () => new NotFoundError('Нет товара по заданному id')
         )
         return res.send(product)
     } catch (error) {
-        if (error instanceof MongooseError.CastError) {
-            return next(new BadRequestError('Передан не валидный ID товара'))
-        }
         return next(error)
     }
 }

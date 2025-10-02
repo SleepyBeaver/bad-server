@@ -49,25 +49,21 @@ const userSchema = new mongoose.Schema<IUser, IUserModel, IUserMethods>(
             minlength: [2, 'Минимальная длина поля "name" - 2'],
             maxlength: [30, 'Максимальная длина поля "name" - 30'],
         },
-        // в схеме пользователя есть обязательные email и password
         email: {
             type: String,
             required: [true, 'Поле "email" должно быть заполнено'],
-            unique: true, // поле email уникально (есть опция unique: true);
+            unique: true,
             validate: {
-                // для проверки email студенты используют validator
                 validator: (v: string) => validator.isEmail(v),
                 message: 'Поле "email" должно быть валидным email-адресом',
             },
         },
-        // поле password не имеет ограничения на длину, т.к. пароль хранится в виде хэша
         password: {
             type: String,
             required: [true, 'Поле "password" должно быть заполнено'],
             minlength: [6, 'Минимальная длина поля "password" - 6'],
             select: false,
         },
-
         tokens: [
             {
                 token: { required: true, type: String },
@@ -78,45 +74,30 @@ const userSchema = new mongoose.Schema<IUser, IUserModel, IUserMethods>(
             enum: Object.values(Role),
             default: [Role.Customer],
         },
-        phone: {
-            type: String,
-        },
-        lastOrderDate: {
-            type: Date,
-            default: null,
-        },
-        lastOrder: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'order',
-            default: null,
-        },
+        phone: { type: String },
+        lastOrderDate: { type: Date, default: null },
+        lastOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'order', default: null },
         totalAmount: { type: Number, default: 0 },
         orderCount: { type: Number, default: 0 },
-        orders: [
-            {
-                type: Types.ObjectId,
-                ref: 'order',
-            },
-        ],
+        orders: [{ type: Types.ObjectId, ref: 'order' }],
     },
     {
         versionKey: false,
         timestamps: true,
-        // Возможно удаление пароля в контроллере создания, т.к. select: false не работает в случае создания сущности https://mongoosejs.com/docs/api/document.html#Document.prototype.toJSON()
         toJSON: {
             virtuals: true,
             transform: (_doc, ret) => {
-                delete ret.tokens
-                delete ret.password
-                delete ret._id
-                delete ret.roles
-                return ret
+                const obj = ret as any
+                delete obj.tokens
+                delete obj.password
+                delete obj._id
+                delete obj.roles
+                return obj
             },
         },
     }
 )
 
-// Возможно добавление хеша в контроллере регистрации
 userSchema.pre('save', async function hashingPassword(next) {
     try {
         if (this.isModified('password')) {
@@ -128,64 +109,40 @@ userSchema.pre('save', async function hashingPassword(next) {
     }
 })
 
-// Можно лучше: централизованное создание accessToken и  refresh токена
-
 userSchema.methods.generateAccessToken = function generateAccessToken() {
     const user = this
-    // Создание accessToken токена возможно в контроллере авторизации
+    const id = (user._id as Types.ObjectId).toString()
     return jwt.sign(
-        {
-            _id: user._id.toString(),
-            email: user.email,
-        },
+        { _id: id, email: user.email },
         ACCESS_TOKEN.secret,
-        {
-            expiresIn: ACCESS_TOKEN.expiry,
-            subject: user.id.toString(),
-        }
+        { expiresIn: ACCESS_TOKEN.expiry, subject: id }
     )
 }
 
-userSchema.methods.generateRefreshToken =
-    async function generateRefreshToken() {
-        const user = this
-        // Создание refresh токена возможно в контроллере авторизации/регистрации
-        const refreshToken = jwt.sign(
-            {
-                _id: user._id.toString(),
-            },
-            REFRESH_TOKEN.secret,
-            {
-                expiresIn: REFRESH_TOKEN.expiry,
-                subject: user.id.toString(),
-            }
-        )
+userSchema.methods.generateRefreshToken = async function generateRefreshToken() {
+    const user = this
+    const id = (user._id as Types.ObjectId).toString()
+    const refreshToken = jwt.sign(
+        { _id: id },
+        REFRESH_TOKEN.secret,
+        { expiresIn: REFRESH_TOKEN.expiry, subject: id }
+    )
+    const rTknHash = crypto
+        .createHmac('sha256', REFRESH_TOKEN.secret)
+        .update(refreshToken)
+        .digest('hex')
+    user.tokens.push({ token: rTknHash })
+    await user.save()
+    return refreshToken
+}
 
-        // Можно лучше: Создаем хеш refresh токена
-        const rTknHash = crypto
-            .createHmac('sha256', REFRESH_TOKEN.secret)
-            .update(refreshToken)
-            .digest('hex')
-
-        // Сохраняем refresh токена в базу данных, можно делать в контроллере авторизации/регистрации
-        user.tokens.push({ token: rTknHash })
-        await user.save()
-
-        return refreshToken
-    }
-
-userSchema.statics.findUserByCredentials = async function findByCredentials(
-    email: string,
-    password: string
-) {
+userSchema.statics.findUserByCredentials = async function findByCredentials(email: string, password: string) {
     const user = await this.findOne({ email })
         .select('+password')
         .orFail(() => new UnauthorizedError('Неправильные почта или пароль'))
     const passwdMatch = md5(password) === user.password
     if (!passwdMatch) {
-        return Promise.reject(
-            new UnauthorizedError('Неправильные почта или пароль')
-        )
+        return Promise.reject(new UnauthorizedError('Неправильные почта или пароль'))
     }
     return user
 }
@@ -204,7 +161,6 @@ userSchema.methods.calculateOrderStats = async function calculateOrderStats() {
             },
         },
     ])
-
     if (orderStats.length > 0) {
         const stats = orderStats[0]
         user.totalAmount = stats.totalAmount
@@ -217,9 +173,8 @@ userSchema.methods.calculateOrderStats = async function calculateOrderStats() {
         user.lastOrderDate = null
         user.lastOrder = null
     }
-
     await user.save()
 }
-const UserModel = mongoose.model<IUser, IUserModel>('user', userSchema)
 
+const UserModel = mongoose.model<IUser, IUserModel>('user', userSchema)
 export default UserModel

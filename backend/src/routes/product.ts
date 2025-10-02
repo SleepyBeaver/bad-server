@@ -1,42 +1,48 @@
-import { Router } from 'express'
+import { Router } from 'express';
 import {
-    createProduct,
-    deleteProduct,
-    getProducts,
-    updateProduct,
-} from '../controllers/products'
-import auth, { roleGuardMiddleware } from '../middlewares/auth'
+  createProduct,
+  deleteProduct,
+  getProducts,
+  updateProduct,
+} from '../controllers/products';
+import auth, { roleGuardMiddleware } from '../middlewares/auth';
 import {
-    validateObjId,
-    validateProductBody,
-    validateProductUpdateBody,
-} from '../middlewares/validations'
-import { Role } from '../models/user'
+  validateObjId,
+  validateProductBody,
+  validateProductUpdateBody,
+} from '../middlewares/validations';
+import { Role } from '../models/user';
+import { sanitizeBody } from '../middlewares/sanitizeBody';
 
-const productRouter = Router()
+const productRouter = Router();
 
-productRouter.get('/', getProducts)
+productRouter.get('/', getProducts);
+
 productRouter.post(
-    '/',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    validateProductBody,
-    createProduct
-)
-productRouter.delete(
-    '/:productId',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    validateObjId,
-    deleteProduct
-)
-productRouter.patch(
-    '/:productId',
-    auth,
-    roleGuardMiddleware(Role.Admin),
-    validateObjId,
-    validateProductUpdateBody,
-    updateProduct
-)
+  '/',
+  auth,
+  roleGuardMiddleware(Role.Admin),
+  sanitizeBody(['title', 'description', 'category']),
+  validateProductBody,
+  createProduct
+);
 
-export default productRouter
+productRouter.delete(
+  '/:productId',
+  auth,
+  roleGuardMiddleware(Role.Admin),
+  validateObjId,
+  deleteProduct
+);
+
+productRouter.patch(
+  '/:productId',
+  auth,
+  roleGuardMiddleware(Role.Admin),
+  validateObjId,
+  sanitizeBody(['title', 'description', 'category']),
+  validateProductUpdateBody,
+  updateProduct
+);
+
+export default productRouter;

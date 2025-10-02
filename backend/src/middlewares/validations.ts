@@ -9,7 +9,6 @@ export enum PaymentType {
     Online = 'online',
 }
 
-// валидация id
 export const validateOrderBody = celebrate({
     body: Joi.object().keys({
         items: Joi.array()
@@ -21,8 +20,12 @@ export const validateOrderBody = celebrate({
                     return helpers.message({ custom: 'Невалидный id' })
                 })
             )
+            .min(1)
+            .max(50)
             .messages({
                 'array.empty': 'Не указаны товары',
+                'array.min': 'Не указаны товары',
+                'array.max': 'Слишком много товаров в заказе (макс 50)',
             }),
         payment: Joi.string()
             .valid(...Object.values(PaymentType))
@@ -35,8 +38,9 @@ export const validateOrderBody = celebrate({
         email: Joi.string().email().required().messages({
             'string.empty': 'Не указан email',
         }),
-        phone: Joi.string().required().pattern(phoneRegExp).messages({
+        phone: Joi.string().required().pattern(phoneRegExp).max(25).messages({
             'string.empty': 'Не указан телефон',
+            'string.max': 'Телефон слишком длинный',
         }),
         address: Joi.string().required().messages({
             'string.empty': 'Не указан адрес',
@@ -48,8 +52,6 @@ export const validateOrderBody = celebrate({
     }),
 })
 
-// валидация товара.
-// name и link - обязательные поля, name - от 2 до 30 символов, link - валидный url
 export const validateProductBody = celebrate({
     body: Joi.object().keys({
         title: Joi.string().required().min(2).max(30).messages({

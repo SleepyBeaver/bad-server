@@ -1,43 +1,102 @@
-import { errors } from 'celebrate'
-import cookieParser from 'cookie-parser'
-import cors from 'cors'
-import 'dotenv/config'
-import express, { json, urlencoded } from 'express'
-import mongoose from 'mongoose'
-import path from 'path'
-import { DB_ADDRESS } from './config'
-import errorHandler from './middlewares/error-handler'
-import serveStatic from './middlewares/serverStatic'
-import routes from './routes'
+import { errors } from 'celebrate';
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import 'dotenv/config';
+import express, { json, urlencoded, Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
+import path from 'path';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import csurf from 'csurf';
 
-const { PORT = 3000 } = process.env
-const app = express()
+import { DB_ADDRESS } from './config';
+import errorHandler from './middlewares/error-handler';
+import routes from './routes';
 
-app.use(cookieParser())
+const { PORT = 3000 } = process.env;
+const app = express();
 
-app.use(cors())
-// app.use(cors({ origin: ORIGIN_ALLOW, credentials: true }));
-// app.use(express.static(path.join(__dirname, 'public')));
+app.use(cookieParser());
 
-app.use(serveStatic(path.join(__dirname, 'public')))
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
 
-app.use(urlencoded({ extended: true }))
-app.use(json())
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", "http://localhost:5173", "data:"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  })
+);
 
-app.options('*', cors())
-app.use(routes)
-app.use(errors())
-app.use(errorHandler)
+const allowedOrigins = ['http://localhost:5173', 'http://localhost'];
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Not allowed by CORS: ${origin}`));
+    }
+  },
+  credentials: true,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
-// eslint-disable-next-line no-console
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(limiter);
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.use(urlencoded({ extended: true, limit: '100kb' }));
+app.use(json({ limit: '100kb' }));
+
+const csrfProtection = csurf({
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  },
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (
+    ['POST', 'PATCH', 'DELETE'].includes(req.method) &&
+    !['/auth/login', '/auth/register'].includes(req.path)
+  ) {
+    csrfProtection(req, res, next);
+  } else {
+    next();
+  }
+});
+
+app.get('/auth/csrf-token', csrfProtection, (req: Request, res: Response) => {
+  res.json({ csrfToken: (req as any).csrfToken() });
+});
+
+app.use(routes);
+
+app.use(errors());
+app.use(errorHandler);
 
 const bootstrap = async () => {
-    try {
-        await mongoose.connect(DB_ADDRESS)
-        await app.listen(PORT, () => console.log('ok'))
-    } catch (error) {
-        console.error(error)
-    }
-}
+  try {
+    await mongoose.connect(DB_ADDRESS);
+    await app.listen(PORT, () => console.log('Server started on port', PORT));
+  } catch (error) {
+    console.error(error);
+  }
+};
 
-bootstrap()
+bootstrap();
