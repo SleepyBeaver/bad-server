@@ -35,26 +35,24 @@ app.use(
   })
 );
 
-const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000']
-
+const allowedOrigins = ['http://localhost:5173', 'http://localhost'];
 app.use(
-    cors({
-        origin: (origin, callback) => {
-            if (!origin || allowedOrigins.includes(origin)) {
-                callback(null, true)
-            } else {
-                callback(new Error(`Not allowed by CORS: ${origin}`))
-            }
-        },
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
-    })
-)
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Not allowed by CORS: ${origin}`));
+      }
+    },
+    credentials: true,
+  })
+);
+app.options('*', cors());
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 100,
   message: 'Слишком много запросов, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
