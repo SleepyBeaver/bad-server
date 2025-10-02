@@ -8,7 +8,6 @@ import UnauthorizedError from '../errors/unauthorized-error'
 import UserModel, { Role } from '../models/user'
 
 // есть файл middlewares/auth.js, в нём мидлвэр для проверки JWT;
-
 const auth = async (req: Request, res: Response, next: NextFunction) => {
     let payload: JwtPayload | null = null
     const authHeader = req.header('Authorization')

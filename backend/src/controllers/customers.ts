@@ -27,7 +27,14 @@ export const getCustomers = async (
             orderCountFrom,
             orderCountTo,
             search,
+            pageSize,
         } = req.query
+
+        const safePage = Math.max(1, Number(page) || 1)
+        let safeLimit = Number(limit ?? pageSize ?? 10)
+        if (!Number.isFinite(safeLimit) || safeLimit < 1) safeLimit = 10
+        if (safeLimit > 10) safeLimit = 10
+        const skip = (safePage - 1) * safeLimit
 
         const filters: FilterQuery<Partial<IUser>> = {}
 
@@ -116,8 +123,8 @@ export const getCustomers = async (
 
         const options = {
             sort,
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
+            skip,
+            limit: safeLimit,
         }
 
         const users = await User.find(filters, null, options).populate([
@@ -137,15 +144,15 @@ export const getCustomers = async (
         ])
 
         const totalUsers = await User.countDocuments(filters)
-        const totalPages = Math.ceil(totalUsers / Number(limit))
+        const totalPages = Math.ceil(totalUsers / safeLimit)
 
         res.status(200).json({
             customers: users,
             pagination: {
                 totalUsers,
                 totalPages,
-                currentPage: Number(page),
-                pageSize: Number(limit),
+                currentPage: safePage,
+                pageSize: safeLimit,
             },
         })
     } catch (error) {

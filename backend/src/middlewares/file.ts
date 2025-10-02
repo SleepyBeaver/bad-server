@@ -1,10 +1,22 @@
 import { Request, Express } from 'express'
+import { existsSync, mkdirSync } from 'fs'
 import multer, { FileFilterCallback } from 'multer'
 import { join } from 'path'
 
 type DestinationCallback = (error: Error | null, destination: string) => void
 type FileNameCallback = (error: Error | null, filename: string) => void
 
+const createUploadDirectory = () => {
+    const uploadPath = process.env.UPLOAD_PATH_TEMP
+        ? join(__dirname, `../public/${process.env.UPLOAD_PATH_TEMP}`)
+        : join(__dirname, '../public')
+
+    if (!existsSync(uploadPath)) {
+        mkdirSync(uploadPath, { recursive: true })
+    }
+}
+
+createUploadDirectory()
 const storage = multer.diskStorage({
     destination: (
         _req: Request,

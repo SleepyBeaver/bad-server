@@ -2,14 +2,14 @@ import { Joi, celebrate } from 'celebrate'
 import { Types } from 'mongoose'
 
 // eslint-disable-next-line no-useless-escape
-export const phoneRegExp = /^(\+\d+)?(?:\s|-?|\(?\d+\)?)+$/
+// export const phoneRegExp = /^(\+\d+)?(?:\s|-?|\(?\d+\)?)+$/
+export const phoneRegExp = /^\+?[0-9\s\-()]{7,20}$/;
 
 export enum PaymentType {
     Card = 'card',
     Online = 'online',
 }
 
-// валидация id
 export const validateOrderBody = celebrate({
     body: Joi.object().keys({
         items: Joi.array()
@@ -48,8 +48,6 @@ export const validateOrderBody = celebrate({
     }),
 })
 
-// валидация товара.
-// name и link - обязательные поля, name - от 2 до 30 символов, link - валидный url
 export const validateProductBody = celebrate({
     body: Joi.object().keys({
         title: Joi.string().required().min(2).max(30).messages({
@@ -133,3 +131,20 @@ export const validateAuthentication = celebrate({
         }),
     }),
 })
+
+export const validateOrdersQuery = celebrate({
+  query: Joi.object().keys({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).default(10),
+    sortField: Joi.string()
+      .valid('createdAt', 'totalAmount', 'orderNumber')
+      .default('createdAt'),
+    sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+    status: Joi.string(),
+    search: Joi.string(),
+    totalAmountFrom: Joi.number(),
+    totalAmountTo: Joi.number(),
+    orderDateFrom: Joi.date(),
+    orderDateTo: Joi.date(),
+  }),
+});
