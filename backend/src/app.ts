@@ -27,11 +27,12 @@ app.use(cors({
 }));
 
 const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
   message: 'Слишком много запросов, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method !== 'GET',
 });
 app.use(limiter);
 
