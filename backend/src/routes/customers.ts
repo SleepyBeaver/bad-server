@@ -1,19 +1,18 @@
-import { Router } from 'express';
+import { Router } from 'express'
 import {
-  deleteCustomer,
-  getCustomerById,
-  getCustomers,
-  updateCustomer,
-} from '../controllers/customers';
-import auth, { roleGuardMiddleware } from '../middlewares/auth';
-import { sanitizeBody } from '../middlewares/sanitizeBody';
+    deleteCustomer,
+    getCustomerById,
+    getCustomers,
+    updateCustomer,
+} from '../controllers/customers'
+import auth, { roleGuardMiddleware} from '../middlewares/auth'
 import { Role } from '../models/user'
 
-const customerRouter = Router();
+const customerRouter = Router()
 
-customerRouter.get('/', auth, roleGuardMiddleware(Role.Admin), getCustomers);
-customerRouter.get('/:id', auth, roleGuardMiddleware(Role.Admin), getCustomerById);
-customerRouter.patch('/:id', auth, roleGuardMiddleware(Role.Admin), sanitizeBody(['name', 'email']), updateCustomer);
-customerRouter.delete('/:id', auth, roleGuardMiddleware(Role.Admin), deleteCustomer);
+customerRouter.get('/', auth, roleGuardMiddleware(Role.Admin), getCustomers)
+customerRouter.get('/:id', auth, getCustomerById)
+customerRouter.patch('/:id', auth, updateCustomer)
+customerRouter.delete('/:id', auth, deleteCustomer)
 
-export default customerRouter;
+export default customerRouter

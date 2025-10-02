@@ -23,4 +23,4 @@ export const REFRESH_TOKEN = {
     },
 }
 
-export const ORIGIN_ALLOW = (process.env.ORIGIN_ALLOW || 'http://localhost:5173')
+export const ORIGIN_ALLOW = (process.env.ORIGIN_ALLOW || 'http://localhost')
