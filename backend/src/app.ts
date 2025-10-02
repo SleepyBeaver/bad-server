@@ -36,22 +36,24 @@ app.use(
 );
 
 const allowedOrigins = ['http://localhost:5173', 'http://localhost'];
-const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`Not allowed by CORS: ${origin}`));
-    }
-  },
-  credentials: true,
-};
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Not allowed by CORS: ${origin}`));
+      }
+    },
+    credentials: true,
+  })
+);
+app.options('*', cors());
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 100,
+  message: 'Слишком много запросов, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -88,6 +90,7 @@ app.get('/auth/csrf-token', csrfProtection, (req: Request, res: Response) => {
 app.use(routes);
 
 app.use(errors());
+
 app.use(errorHandler);
 
 const bootstrap = async () => {

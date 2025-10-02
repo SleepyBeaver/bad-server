@@ -23,7 +23,7 @@ orderRouter.post(
   createOrder
 );
 
-orderRouter.get('/all', auth, getOrders);
+orderRouter.get('/all', auth, roleGuardMiddleware(Role.Admin), getOrders);
 orderRouter.get('/all/me', auth, getOrdersCurrentUser);
 
 orderRouter.get(

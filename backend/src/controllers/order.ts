@@ -53,10 +53,16 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
     ]
 
     if (search && typeof search === 'string') {
+      if (search.length > 100) return next(new BadRequestError('Некорректный параметр поиска'))
+
       const searchRegex = safeSearch(search)
       const searchNumber = Number(search)
       const searchConditions: any[] = [{ 'products.title': searchRegex }]
-      if (!Number.isNaN(searchNumber)) searchConditions.push({ orderNumber: searchNumber })
+
+      if (!Number.isNaN(searchNumber) && Number.isSafeInteger(searchNumber) && searchNumber > 0) {
+        searchConditions.push({ orderNumber: searchNumber })
+      }
+
       aggregatePipeline.push({ $match: { $or: searchConditions } })
       filters.$or = searchConditions
     }
@@ -111,6 +117,8 @@ export const getOrdersCurrentUser = async (req: Request, res: Response, next: Ne
     let orders = user.orders as unknown as IOrder[]
 
     if (search && typeof search === 'string') {
+      if (search.length > 100) return next(new BadRequestError('Некорректный параметр поиска'))
+
       const searchRegex = safeSearch(search)
       const searchNumber = Number(search)
       const products = await Product.find({ title: searchRegex })
@@ -120,7 +128,9 @@ export const getOrdersCurrentUser = async (req: Request, res: Response, next: Ne
         const matchesProduct = order.products.some((p) =>
           productIds.some((id) => (p._id as Types.ObjectId).equals(id))
         )
-        const matchesNumber = !Number.isNaN(searchNumber) && order.orderNumber === searchNumber
+        const matchesNumber = !Number.isNaN(searchNumber) && Number.isSafeInteger(searchNumber) && searchNumber > 0
+          ? order.orderNumber === searchNumber
+          : false
         return matchesProduct || matchesNumber
       })
     }
