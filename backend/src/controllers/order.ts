@@ -61,7 +61,6 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
         searchConditions.push({ orderNumber: searchNumber });
       }
 
-      // Безопасно используем только в агрегации
       aggregatePipeline.push({ $match: { $or: searchConditions } });
     }
 
@@ -87,7 +86,6 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
 
     const orders = await Order.aggregate(aggregatePipeline);
 
-    // Безопасный подсчёт totalOrders через агрегацию
     const countPipeline: any[] = [{ $match: filters }];
     if (search && typeof search === 'string') {
       const searchRegex = safeSearch(search);
