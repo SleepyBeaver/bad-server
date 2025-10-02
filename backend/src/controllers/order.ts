@@ -29,20 +29,18 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
       orderDateFrom,
       orderDateTo,
       search,
-    } = req.query
+    } = req.query;
 
-    const pageNum = toPageNumber(page)
-    const limitNum = normalizeLimit(limit, 10, 10)
+    const pageNum = toPageNumber(page);
+    const limitNum = normalizeLimit(limit, 10, 10);
 
-    const filters: FilterQuery<IOrder> = {}
+    const filters: FilterQuery<IOrder> = {};
 
-    if (status && typeof status === 'string') filters.status = status
-
-    if (totalAmountFrom) filters.totalAmount = { ...filters.totalAmount, $gte: Number(totalAmountFrom) }
-    if (totalAmountTo) filters.totalAmount = { ...filters.totalAmount, $lte: Number(totalAmountTo) }
-
-    if (orderDateFrom) filters.createdAt = { ...filters.createdAt, $gte: new Date(orderDateFrom as string) }
-    if (orderDateTo) filters.createdAt = { ...filters.createdAt, $lte: new Date(orderDateTo as string) }
+    if (status && typeof status === 'string') filters.status = status;
+    if (totalAmountFrom) filters.totalAmount = { ...filters.totalAmount, $gte: Number(totalAmountFrom) };
+    if (totalAmountTo) filters.totalAmount = { ...filters.totalAmount, $lte: Number(totalAmountTo) };
+    if (orderDateFrom) filters.createdAt = { ...filters.createdAt, $gte: new Date(orderDateFrom as string) };
+    if (orderDateTo) filters.createdAt = { ...filters.createdAt, $lte: new Date(orderDateTo as string) };
 
     const aggregatePipeline: any[] = [
       { $match: filters },
@@ -50,25 +48,25 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
       { $lookup: { from: 'users', localField: 'customer', foreignField: '_id', as: 'customer' } },
       { $unwind: '$customer' },
       { $unwind: '$products' },
-    ]
+    ];
 
     if (search && typeof search === 'string') {
-      if (search.length > 100) return next(new BadRequestError('Некорректный параметр поиска'))
+      if (search.length > 100) return next(new BadRequestError('Некорректный параметр поиска'));
 
-      const searchRegex = safeSearch(search)
-      const searchNumber = Number(search)
-      const searchConditions: any[] = [{ 'products.title': searchRegex }]
+      const searchRegex = safeSearch(search);
+      const searchNumber = Number(search);
+      const searchConditions: any[] = [{ 'products.title': searchRegex }];
 
       if (!Number.isNaN(searchNumber) && Number.isSafeInteger(searchNumber) && searchNumber > 0) {
-        searchConditions.push({ orderNumber: searchNumber })
+        searchConditions.push({ orderNumber: searchNumber });
       }
 
-      aggregatePipeline.push({ $match: { $or: searchConditions } })
-      filters.$or = searchConditions
+      // Безопасно используем только в агрегации
+      aggregatePipeline.push({ $match: { $or: searchConditions } });
     }
 
-    const sort: Record<string, any> = {}
-    sort[sortField as string] = sortOrder === 'desc' ? -1 : 1
+    const sort: Record<string, any> = {};
+    sort[sortField as string] = sortOrder === 'desc' ? -1 : 1;
 
     aggregatePipeline.push(
       { $sort: sort },
@@ -85,20 +83,35 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
           createdAt: { $first: '$createdAt' },
         },
       }
-    )
+    );
 
-    const orders = await Order.aggregate(aggregatePipeline)
-    const totalOrders = await Order.countDocuments(filters)
-    const totalPages = Math.ceil(totalOrders / limitNum)
+    const orders = await Order.aggregate(aggregatePipeline);
+
+    // Безопасный подсчёт totalOrders через агрегацию
+    const countPipeline: any[] = [{ $match: filters }];
+    if (search && typeof search === 'string') {
+      const searchRegex = safeSearch(search);
+      const searchNumber = Number(search);
+      const searchConditions: any[] = [{ 'products.title': searchRegex }];
+      if (!Number.isNaN(searchNumber) && Number.isSafeInteger(searchNumber) && searchNumber > 0) {
+        searchConditions.push({ orderNumber: searchNumber });
+      }
+      countPipeline.push({ $match: { $or: searchConditions } });
+    }
+    countPipeline.push({ $count: 'count' });
+    const totalOrdersAgg = await Order.aggregate(countPipeline);
+    const totalOrders = totalOrdersAgg[0]?.count || 0;
+
+    const totalPages = Math.ceil(totalOrders / limitNum);
 
     res.status(200).json({
       orders,
       pagination: { totalOrders, totalPages, currentPage: pageNum, pageSize: limitNum },
-    })
+    });
   } catch (error) {
-    next(error)
+    next(error);
   }
-}
+};
 
 // GET orders for current user
 export const getOrdersCurrentUser = async (req: Request, res: Response, next: NextFunction) => {

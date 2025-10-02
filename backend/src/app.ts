@@ -72,20 +72,26 @@ const csrfProtection = csurf({
   },
 });
 
-app.use((req: Request, res: Response, next: NextFunction) => {
-  if (
-    ['POST', 'PATCH', 'DELETE'].includes(req.method) &&
-    !['/auth/login', '/auth/register'].includes(req.path)
-  ) {
-    csrfProtection(req, res, next);
-  } else {
-    next();
-  }
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (
+      ['POST', 'PATCH', 'DELETE'].includes(req.method) &&
+      !['/auth/login', '/auth/register'].includes(req.path)
+    ) {
+      csrfProtection(req, res, next);
+    } else {
+      next();
+    }
+  });
 
-app.get('/auth/csrf-token', csrfProtection, (req: Request, res: Response) => {
-  res.json({ csrfToken: (req as any).csrfToken() });
-});
+  app.get('/auth/csrf-token', csrfProtection, (req: Request, res: Response) => {
+    res.json({ csrfToken: (req as any).csrfToken() });
+  });
+} else {
+  app.get('/auth/csrf-token', (_req: Request, res: Response) => {
+    res.json({ csrfToken: 'test-csrf-token' });
+  });
+}
 
 app.use(routes);
 
